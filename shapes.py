@@ -132,15 +132,6 @@ class Edge:
         else:
             return False
 
-
-# plus any intersection helpers
-
-# ===========================
-# MOTION / BOUNDING UTILITIES (your part)
-# ===========================
-# (paste the whole motion + swept AABB block here)
-# includes _HasXY, AABB2D, PathSegment, MotionPath, MovingShape, etc.
-
 @runtime_checkable
 class _HasXY(Protocol):
     x: float
@@ -152,8 +143,6 @@ def _xy(p) -> Tuple[float, float]:
         return float(p.x), float(p.y)
     # tuple/list like
     return float(p[0]), float(p[1])
-
-# --- Generic AABB (no class name collisions with your code) ---
 
 class AABB2D:
     __slots__ = ("minx", "miny", "maxx", "maxy")
