@@ -588,6 +588,7 @@ def _swept_aabb_hit(t0, t1, msA: MovingShape, msB: MovingShape):
     aB = msB.aabb_at(t0)
     ax0, ay0, ax1, ay1 = aA.minx, aA.miny, aA.maxx, aA.maxy
     bx0, by0, bx1, by1 = aB.minx, aB.miny, aB.maxx, aB.maxy
+    # “Does moving box B, with velocity (rvx, rvy), hit stationary box A?”
     vAx, vAy = _current_velocity(msA.path, t0)
     vBx, vBy = _current_velocity(msB.path, t0)
     rvx, rvy = (vAx - vBx), (vAy - vBy)
@@ -641,6 +642,7 @@ def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
                 lo = mid
         return hi
 
+    # Time window for collision.
     for k in range(len(times) - 1):
         t0, t1 = times[k], times[k+1]
         if best is not None and t0 - best > EPS:
@@ -684,7 +686,6 @@ def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
     def collide(t):
         return _polygons_intersect_at_time(msA, msB, _clip(t))
 
-    # number of interior probes per interval (tune as needed)
     PROBES = 16
 
     best = None
@@ -697,13 +698,11 @@ def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
                 best = t0 if best is None else min(best, t0)
             continue
 
-        # If already colliding at the left endpoint, that's the earliest for this interval.
         if collide(t0):
             if best is None or t0 < best:
                 best = t0
             continue
 
-        # Probe interior points left-to-right; remember the last non-colliding time.
         last_free_t = t0
         hit = None
         step = (t1 - t0) / (PROBES + 1)
@@ -716,12 +715,9 @@ def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
             else:
                 last_free_t = tt
 
-        # If no interior hit, also check right endpoint once (just in case)
         if hit is None and collide(t1):
             hit = t1
-            # last_free_t is already the last false (maybe a probe, maybe t0)
 
-        # If we got a hit, bisect [last_free_t, hit] to first contact
         if hit is not None:
             lo, hi = last_free_t, hit
             for _ in range(64):
@@ -732,12 +728,10 @@ def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
                     lo = mid
                 if hi - lo <= tol:
                     break
-            cand = max(0.0, hi)  # sanitize tiny negatives
+            cand = max(0.0, hi)
             if best is None or cand < best:
                 best = cand
 
-        # Early exit: if we already found a contact at/before t0, nothing earlier exists
-        # (Not strictly necessary; best is monotone nonincreasing in the scan order.)
         if best is not None and best <= t0 + tol:
             break
 
@@ -751,10 +745,10 @@ def build_candidates_sweep(ms_list: list[MovingShape]):
     maxT = max(ms.t_end for ms in ms_list) if ms_list else 0.0
     boxes = []
     for i, ms in enumerate(ms_list):
-        box = ms.swept_aabb(0.0, maxT)  # includes sampling at boundaries if you patched it
+        # Sweeps AABB box.
+        box = ms.swept_aabb(0.0, maxT)
         boxes.append((i, box))
 
-    # sweep on x
     items = sorted(boxes, key=lambda x: x[1].minx)
     active = []
     candidates = []
