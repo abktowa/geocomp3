@@ -46,7 +46,7 @@ GUI:
 
 Usage
 -----
-  python3 collision_viewer_time.py input.txt
+  python collision_viewer_time.py ./SampleShapes/sample_lines.txt
   python3 collision_viewer_time.py input.txt --t0 3.5 --t1 4.0 --dt 0.0001
   python3 collision_viewer_time.py input.txt --focus-id 0 --highlight-id 4
 """

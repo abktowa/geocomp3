@@ -5,6 +5,7 @@ import sys
 
 EPS = 1e-8  # robust tolerance for predicates
 DEBUG = False
+
 class Shape:
     def __init__(self, pointCoors, pathTriples):
         self.points = []
@@ -27,7 +28,6 @@ class Shape:
         self.currentPathIndex = 0
         self.currentTime = 0
         
-
 
     def getRadius(self, startPoint, currentLargest):
         maxDist = currentLargest
@@ -136,20 +136,22 @@ class Edge:
 class _HasXY(Protocol):
     x: float
     y: float
-    
+
+# Return (x,y) for either tuple-like or objects with x/y.
 def _xy(p) -> Tuple[float, float]:
-    """Return (x,y) for either tuple-like or objects with .x/.y."""
     if isinstance(p, _HasXY):
         return float(p.x), float(p.y)
     # tuple/list like
     return float(p[0]), float(p[1])
 
+# Stores a 2D bounding box defined by our minx, miny, maxx, and maxy.
 class AABB2D:
     __slots__ = ("minx", "miny", "maxx", "maxy")
 
     def __init__(self, minx=math.inf, miny=math.inf, maxx=-math.inf, maxy=-math.inf):
         self.minx, self.miny, self.maxx, self.maxy = minx, miny, maxx, maxy
 
+    # Grows the box to include a point.
     def expand_pt(self, p) -> None:
         x, y = _xy(p)
         if x < self.minx: self.minx = x
@@ -157,6 +159,7 @@ class AABB2D:
         if x > self.maxx: self.maxx = x
         if y > self.maxy: self.maxy = y
 
+    # Combines two boxes.
     def merge(self, other: "AABB2D") -> "AABB2D":
         out = AABB2D()
         out.minx = min(self.minx, other.minx)
@@ -165,8 +168,8 @@ class AABB2D:
         out.maxy = max(self.maxy, other.maxy)
         return out
 
+    # Tests if two boxes intersect.
     def overlaps(self, other: "AABB2D") -> bool:
-        # Closed boxes; touching counts
         return not (
             self.maxx < other.minx - EPS or
             self.minx > other.maxx + EPS or
@@ -174,21 +177,27 @@ class AABB2D:
             self.miny > other.maxy + EPS
         )
 
+    # Returns box coordinates as a tuple.
     def as_tuple(self) -> Tuple[float, float, float, float]:
         return (self.minx, self.miny, self.maxx, self.maxy)
     
-    
+
+# Returns smallest AABB that encloses a list of points.
 def aabb_of_points_generic(pts: Iterable) -> AABB2D:
     box = AABB2D()
     for p in pts:
         box.expand_pt(p)
     return box
 
+# Wrapper for our polygons, computes AABB over polygon vertices.
 def aabb_of_polygon_generic(verts: List) -> AABB2D:
     return aabb_of_points_generic(verts)
 
-# --- Lightweight vector helpers (no class, just functions) ---
+###########
+# HELPERS #
+###########
 
+# Vector math.
 def _v_add(p, q):
     x1, y1 = _xy(p); x2, y2 = _xy(q)
     return (x1 + x2, y1 + y2)
@@ -201,11 +210,13 @@ def _v_smul(p, s: float):
     x, y = _xy(p)
     return (x * s, y * s)
 
+# Squared distance between points.
 def _dist2(a, b):
     ax, ay = _xy(a); bx, by = _xy(b)
     dx, dy = ax - bx, ay - by
     return dx*dx + dy*dy
 
+# Checks if a point lies on a line segment.
 def _point_on_segment(p, a, b):
     # Collinear and within bounding box
     if abs(_orient(a, b, p)) > EPS: 
@@ -214,6 +225,7 @@ def _point_on_segment(p, a, b):
     return (min(ax, bx) - EPS <= px <= max(ax, bx) + EPS and
             min(ay, by) - EPS <= py <= max(ay, by) + EPS)
 
+# Checks both "inside" as well as "edge" cases.
 def _point_in_or_on_poly(p, poly):
     # On any edge?
     n = len(poly)
@@ -223,23 +235,23 @@ def _point_in_or_on_poly(p, poly):
     # Strict inside test
     return _point_in_poly(p, poly)
 
-# --- Path & Motion storage ---
+###################
+# PATH AND MOTION #
+###################
 
+# Represents a segment (vx, vy) lasting for dt seconds.
 @dataclass(frozen=True)
 class PathSegment:
     vx: float
     vy: float
     dt: float
 
+    # Returns our velocity as (vx, vy). 
     def v_tuple(self) -> Tuple[float, float]:
         return (self.vx, self.vy)
 
+# Stores a sequence of (PathSegment)'s that define object movement over time. Builds a list of prefix times for cumulative timing.
 class MotionPath:
-    """
-    Piecewise-constant velocity path.
-    - segs: list[PathSegment]
-    - prefix_t[i]: start time of seg i
-    """
     __slots__ = ("segs", "prefix_t", "_t_end")
 
     def __init__(self, segs: List[PathSegment]):
@@ -253,6 +265,7 @@ class MotionPath:
             acc += _.dt
         self._t_end = acc
 
+    # Parses a [vx, vy, dt, ...] list into segments.
     @staticmethod
     def from_flat(triples: List[float]) -> "MotionPath":
         if len(triples) % 3 != 0:
@@ -267,12 +280,13 @@ class MotionPath:
             segs.append(PathSegment(vx, vy, dt))
         return MotionPath(segs)
 
+    # Total duration of the path.
     @property
     def t_end(self) -> float:
         return self._t_end
 
+    # Computes how far the object has traveled up to time defined by t.
     def displacement_up_to(self, t: float) -> Tuple[float, float]:
-        """Total translation from t=0 to time t (clamped to end)."""
         if not self.segs or t <= 0:
             return (0.0, 0.0)
         t_rem = min(max(t, 0.0), self._t_end)
@@ -286,17 +300,12 @@ class MotionPath:
             t_rem -= use
         return (dx, dy)
     
-# --- Moving polygon wrapper ---
+##########################
+# POLYGON WRAPPER MOTION #
+##########################
 
+# Combines a static polygon with a (MotionPath) for translation over time.
 class MovingShape:
-    """
-    Wraps a static polygon (list of vertices) + MotionPath.
-    Assumes your polygon is a list of vertices, where each vertex is either:
-      - an object with .x/.y, or
-      - a 2-tuple/list (x, y).
-    No rotation/scaling; pure translation.
-    """
-
     __slots__ = ("poly0", "path")
 
     def __init__(self, polygon_vertices: List, motion_path: MotionPath):
@@ -308,17 +317,18 @@ class MovingShape:
     def t_end(self) -> float:
         return self.path.t_end
 
+    # Returns translated vertices at time t.
     def polygon_at(self, t: float) -> List[Tuple[float, float]]:
-        """Vertices translated to time t."""
         dx, dy = self.path.displacement_up_to(t)
         if abs(dx) < EPS and abs(dy) < EPS:
             return list(self.poly0)
         return [(x + dx, y + dy) for (x, y) in self.poly0]
 
+    # Computes a bounding box of polygon at time t.
     def aabb_at(self, t: float) -> AABB2D:
-        """Tight AABB of the polygon at time t."""
         return aabb_of_polygon_generic(self.polygon_at(t))
 
+    # Computes bounding box that encloses all positions between two times.
     def swept_aabb(self, t0: float, t1: float) -> AABB2D:
         if t1 < t0:
             t0, t1 = t1, t0
@@ -343,13 +353,10 @@ class MovingShape:
                 box.expand_pt(v)
         return box
 
+# Returns the tight bounding box of a polygon as it moves linearly between two positions. 
 def swept_aabb_for_segment_generic(polygon_vertices: List,
                                    start_offset: Tuple[float, float],
                                    vx: float, vy: float, dt: float) -> AABB2D:
-    """
-    Tight swept AABB for a polygon translated from 'start_offset' to
-    'start_offset + (vx,vy)*dt'. Endpoint AABBs merged gives tight box for translation.
-    """
     sx, sy = start_offset
     if dt <= EPS:
         # No motion: just the translated polygon AABB.
@@ -367,6 +374,7 @@ def swept_aabb_for_segment_generic(polygon_vertices: List,
         a.expand_pt((x + sx+dx,  y + sy+dy))
     return a
 
+# Parses a line of space-separated coordinates into polygon vertices.
 def parse_polygon_line_generic(line: str) -> List[Tuple[float, float]]:
     parts = [float(x) for x in line.strip().split()]
     if len(parts) < 2 or len(parts) % 2 != 0:
@@ -374,12 +382,12 @@ def parse_polygon_line_generic(line: str) -> List[Tuple[float, float]]:
     verts = [(parts[i], parts[i+1]) for i in range(0, len(parts), 2)]
     return verts
 
+# Parses velocity–duration triples into a (MotionPath).
 def parse_path_line_to_motionpath(line: str) -> MotionPath:
     parts = [float(x) for x in line.strip().split()]
     return MotionPath.from_flat(parts)
 
 def _read_nonempty_line(f):
-    """Read the next non-empty, non-whitespace line (or return None)."""
     while True:
         line = f.readline()
         if not line:
@@ -387,16 +395,9 @@ def _read_nonempty_line(f):
         line = line.strip()
         if line:
             return line
-
+        
+# Reads input file.
 def load_project_input(file_path: str):
-    """
-    Reads input in the project format:
-      N
-      <polygon line>
-      <path line>
-      (repeated N times)
-    Returns a list[MovingShape].
-    """
     objs = []
     with open(file_path, "r", encoding="utf-8") as f:
         # first line: number of objects
@@ -422,8 +423,8 @@ def load_project_input(file_path: str):
             objs.append(MovingShape(verts, mp))
     return objs
 
+# Debug helper printing AABB and motion info for first few objects.
 def _summarize_objects(mobjs, sample_times=(0.0, 1.0, 5.0)):
-    """Print quick summaries to verify parsing + motion math."""
     print(f"Loaded {len(mobjs)} objects.")
     show = min(5, len(mobjs))
     for i in range(show):
@@ -438,7 +439,9 @@ def _summarize_objects(mobjs, sample_times=(0.0, 1.0, 5.0)):
         whole = ms.swept_aabb(0.0, ms.t_end).as_tuple()
         print(f"  Swept AABB [0, t_end]: {whole}")
         
-# COLLISION PIPELINE
+##############
+# COLLISIONS #
+##############
 
 def _orient(a, b, c):
     ax, ay = _xy(a); bx, by = _xy(b); cx, cy = _xy(c)
@@ -544,8 +547,8 @@ def _polygons_intersect_at_time(msA: MovingShape, msB: MovingShape, t: float) ->
 
     return False
 
+# Returns absolute start times of each path segment.
 def _segment_boundaries(path: MotionPath):
-    """Return absolute start times of each segment and the final end time."""
     times = [0.0]
     acc = 0.0
     for s in path.segs:
@@ -555,10 +558,8 @@ def _segment_boundaries(path: MotionPath):
     # if empty path -> [0.0]
     return times
 
-
-# --- Continuous-time helpers (analytic swept AABB) ---
+# Returns velocity (vx, vy) at a specific time along the motion path.
 def _current_velocity(path: MotionPath, t: float) -> Tuple[float, float]:
-    """Return (vx, vy) of the active segment at time t (clamped)."""
     if not path.segs:
         return (0.0, 0.0)
     t = max(0.0, min(t, path.t_end))
@@ -570,6 +571,7 @@ def _current_velocity(path: MotionPath, t: float) -> Tuple[float, float]:
     last = path.segs[-1]
     return (last.vx, last.vy)
 
+# Computes time intervals during which two intervals overlap along one axis.
 def _axis_overlap_times(a1, b1, a2, b2, rv):
     if abs(rv) <= EPS:
         if b1 < a2 - EPS or b2 < a1 - EPS:
@@ -580,6 +582,7 @@ def _axis_overlap_times(a1, b1, a2, b2, rv):
     else:
         return ((b2 - a1) / rv, (a2 - b1) / rv)
 
+# Analytically determines when two AABBs will first overlap between times [t0,t1].
 def _swept_aabb_hit(t0, t1, msA: MovingShape, msB: MovingShape):
     aA = msA.aabb_at(t0)
     aB = msB.aabb_at(t0)
@@ -606,8 +609,9 @@ def _swept_aabb_hit(t0, t1, msA: MovingShape, msB: MovingShape):
     if cand - t1 <= EPS:
         return cand
     return None
+
+# Collects and merges all segment boundaries from both motion paths.
 def _union_boundaries(msA: MovingShape, msB: MovingShape):
-    """Sorted unique times from both paths (segment starts/ends)."""
     ta = _segment_boundaries(msA.path)
     tb = _segment_boundaries(msB.path)
     all_t = sorted(set(ta + tb))
@@ -617,15 +621,8 @@ def _union_boundaries(msA: MovingShape, msB: MovingShape):
         all_t.append(tmax)
     return all_t
 
-
+# Finds the earliest time two moving shapes come into contact. We use broad-phase check, then binary search for precise collision time.
 def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
-    """
-    Robust earliest-contact finder:
-      1) Split the timeline into intervals where both objects have constant velocity.
-      2) For each [t0,t1], compute analytic swept-AABB earliest hit (if any).
-      3) If a hit exists, refine with a monotone search (binary) using the exact polygon collision.
-    Returns earliest absolute time or None.
-    """
     times = _union_boundaries(msA, msB)
     if not times:
         return None
@@ -745,11 +742,9 @@ def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
             break
 
     return best
+
+# Broad-phase sweep-and-prune algorithm: Finds pairs of moving shapes whose swept AABBs overlap (potential collisions).
 def build_candidates_sweep(ms_list: list[MovingShape]):
-    """
-    Build candidate pairs (i, j) with overlapping global swept AABBs over [0, maxT].
-    This is a coarse filter; narrow-phase will confirm.
-    """
     if not ms_list:
         return []
 
@@ -782,12 +777,8 @@ def build_candidates_sweep(ms_list: list[MovingShape]):
     candidates = sorted(set(candidates))
     return candidates
 
-# Full solve: earliest collision over all objects ----
-
+# Finds (t, i, j) for the earliest collision among all objects. Runs broad-phase for candidates and narrow-phase for precision.
 def earliest_collision(ms_list: list[MovingShape], tol=1e-6):
-    """
-    Returns (T, i, j) for earliest collision, or None if no collision occurs.
-    """
     best_T = None
     best_pair = None
 
@@ -814,10 +805,8 @@ def earliest_collision(ms_list: list[MovingShape], tol=1e-6):
         return None
     return (best_T, best_pair[0], best_pair[1])
 
+# DEBUG TEST.
 def _selftest():
-    # Two unit squares: A at (0,0)-(1,1) moves right 1 unit/s for 10s
-    # B at (5,0)-(6,1) moves left 1 unit/s for 10s
-    # They touch at x=3 at t=3.0.
     A = [(0,0),(0,1),(1,1),(1,0)]
     B = [(5,0),(5,1),(6,1),(6,0)]
     mpA = MotionPath.from_flat([1, 0, 10])   # vx=+1, vy=0, dt=10
@@ -831,7 +820,7 @@ if __name__ == "__main__":
 
     # If no arguments are given, run the self-test instead of loading a file
     if len(sys.argv) == 1:
-        print("No input file provided — running internal self-test...")
+        print("No input file — running internal self-test...")
         _selftest()
         sys.exit(0)
 
