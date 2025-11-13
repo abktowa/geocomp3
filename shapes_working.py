@@ -677,66 +677,6 @@ def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
 
     return best
 
-
-    maxT = max(msA.t_end, msB.t_end)
-
-    def _clip(t):  # clamp to [0, maxT]
-        return 0.0 if t < 0.0 else (maxT if t > maxT else t)
-
-    def collide(t):
-        return _polygons_intersect_at_time(msA, msB, _clip(t))
-
-    PROBES = 16
-
-    best = None
-
-    for i in range(len(times) - 1):
-        t0 = times[i]
-        t1 = times[i + 1]
-        if t1 - t0 <= 1e-12:
-            if collide(t0):
-                best = t0 if best is None else min(best, t0)
-            continue
-
-        if collide(t0):
-            if best is None or t0 < best:
-                best = t0
-            continue
-
-        last_free_t = t0
-        hit = None
-        step = (t1 - t0) / (PROBES + 1)
-        tt = t0
-        for k in range(1, PROBES + 1):
-            tt = t0 + k * step
-            if collide(tt):
-                hit = tt
-                break
-            else:
-                last_free_t = tt
-
-        if hit is None and collide(t1):
-            hit = t1
-
-        if hit is not None:
-            lo, hi = last_free_t, hit
-            for _ in range(64):
-                mid = 0.5 * (lo + hi)
-                if collide(mid):
-                    hi = mid
-                else:
-                    lo = mid
-                if hi - lo <= tol:
-                    break
-            cand = max(0.0, hi)
-            if best is None or cand < best:
-                best = cand
-
-        if best is not None and best <= t0 + tol:
-            break
-
-    return best
-
 # Broad-phase sweep-and-prune algorithm: Finds pairs of moving shapes whose swept AABBs overlap (potential collisions).
 def build_candidates_sweep(ms_list: list[MovingShape]):
     if not ms_list:
