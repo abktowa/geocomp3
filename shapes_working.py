@@ -786,7 +786,7 @@ def earliest_collision(ms_list: list[MovingShape], tol=1e-6):
 
         if T is not None:
             if DEBUG:
-                print(f"[debug] hit pair ({i},{j}) at T={T}")
+                print(f"hit ({i},{j}) at T={T}")
             if T < 0.0:
                 T = 0.0
             if (best_T is None or
