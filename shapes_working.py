@@ -3,7 +3,7 @@ from typing import List, Iterable, Tuple, Protocol, runtime_checkable
 import math
 import sys
 
-EPS = 1e-8  # robust tolerance for predicates
+EPS = 1e-8  # robust tolerance threshold
 DEBUG = False
 
 class Shape:
@@ -583,7 +583,7 @@ def _axis_overlap_times(a1, b1, a2, b2, rv):
         return ((b2 - a1) / rv, (a2 - b1) / rv)
 
 # Analytically determines when two AABBs will first overlap between times [t0,t1].
-def _swept_aabb_hit(t0, t1, msA: MovingShape, msB: MovingShape):
+def _sweep_aabb_hit(t0, t1, msA: MovingShape, msB: MovingShape):
     aA = msA.aabb_at(t0)
     aB = msB.aabb_at(t0)
     ax0, ay0, ax1, ay1 = aA.minx, aA.miny, aA.maxx, aA.maxy
@@ -650,7 +650,7 @@ def find_first_contact_pair(msA: MovingShape, msB: MovingShape, tol=1e-6):
         if collide(t0):
             best = t0 if best is None else min(best, t0)
             continue
-        thit = _swept_aabb_hit(t0, t1, msA, msB)
+        thit = _sweep_aabb_hit(t0, t1, msA, msB)
         if thit is None:
             continue
         L = max(t0, thit - 1e-7)
@@ -754,7 +754,7 @@ if __name__ == "__main__":
 
     # If no arguments are given, run the self-test instead of loading a file
     if len(sys.argv) == 1:
-        print("No input file — running internal self-test...")
+        print("No input file — running self-test...")
         _selftest()
         sys.exit(0)
 
